@@ -506,7 +506,6 @@ static void wpa_supplicant_event_scan_results(struct wpa_supplicant *wpa_s)
 	struct wpa_ssid *ssid = NULL;
 	struct wpa_scan_result *results;
 
-	wpa_s->scan_ongoing = 0;
 	if (wpa_supplicant_get_scan_results(wpa_s) < 0) {
 		if (wpa_s->conf->ap_scan == 2)
 			return;
@@ -662,9 +661,9 @@ static void wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
 		p += len;
 	}
 
-	if (!wpa_found)
+	if (!wpa_found && data->assoc_info.beacon_ies)
 		wpa_sm_set_ap_wpa_ie(wpa_s->wpa, NULL, 0);
-	if (!rsn_found)
+	if (!rsn_found && data->assoc_info.beacon_ies)
 		wpa_sm_set_ap_rsn_ie(wpa_s->wpa, NULL, 0);
 }
 

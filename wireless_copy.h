@@ -69,9 +69,27 @@
 
 /***************************** INCLUDES *****************************/
 
-#include <linux/types.h>		/* for __u* and __s* typedefs */
+/* jkm - replaced linux headers with C library headers, added typedefs */
+#if 0
+/* To minimise problems in user space, I might remove those headers
+ * at some point. Jean II */
+#include <linux/types.h>    /* for "caddr_t" et al    */
 #include <linux/socket.h>		/* for "struct sockaddr" et al	*/
 #include <linux/if.h>			/* for IFNAMSIZ and co... */
+#else
+#include <sys/types.h>
+#include <net/if.h>
+#if !defined(HAVE_ANDROID_OS)
+typedef __uint32_t __u32;
+typedef __int32_t __s32;
+typedef __uint16_t __u16;
+typedef __int16_t __s16;
+typedef __uint8_t __u8;
+#endif
+#ifndef __user
+#define __user
+#endif /* __user */
+#endif
 
 /***************************** VERSION *****************************/
 /*
@@ -80,7 +98,7 @@
  * (there is some stuff that will be added in the future...)
  * I just plan to increment with each new version.
  */
-#define WIRELESS_EXT	22
+#define WIRELESS_EXT	19
 
 /*
  * Changes :
@@ -204,22 +222,6 @@
  *	- Add IW_QUAL_ALL_UPDATED and IW_QUAL_ALL_INVALID macros
  *	- Add explicit flag to tell stats are in dBm : IW_QUAL_DBM
  *	- Add IW_IOCTL_IDX() and IW_EVENT_IDX() macros
- *
- * V19 to V20
- * ----------
- *	- RtNetlink requests support (SET/GET)
- *
- * V20 to V21
- * ----------
- *	- Remove (struct net_device *)->get_wireless_stats()
- *	- Change length in ESSID and NICK to strlen() instead of strlen()+1
- *	- Add IW_RETRY_SHORT/IW_RETRY_LONG retry modifiers
- *	- Power/Retry relative values no longer * 100000
- *	- Add explicit flag to tell stats are in 802.11k RCPI : IW_QUAL_RCPI
- *
- * V21 to V22
- * ----------
- *	- Prevent leaking of kernel space in stream on 64 bits.
  */
 
 /**************************** CONSTANTS ****************************/
@@ -461,7 +463,6 @@
 #define IW_QUAL_QUAL_INVALID	0x10	/* Driver doesn't provide value */
 #define IW_QUAL_LEVEL_INVALID	0x20
 #define IW_QUAL_NOISE_INVALID	0x40
-#define IW_QUAL_RCPI		0x80	/* Level + Noise are 802.11k RCPI */
 #define IW_QUAL_ALL_INVALID	0x70
 
 /* Frequency flags */
@@ -514,12 +515,10 @@
 #define IW_RETRY_TYPE		0xF000	/* Type of parameter */
 #define IW_RETRY_LIMIT		0x1000	/* Maximum number of retries*/
 #define IW_RETRY_LIFETIME	0x2000	/* Maximum duration of retries in us */
-#define IW_RETRY_MODIFIER	0x00FF	/* Modify a parameter */
+#define IW_RETRY_MODIFIER	0x000F	/* Modify a parameter */
 #define IW_RETRY_MIN		0x0001	/* Value is a minimum  */
 #define IW_RETRY_MAX		0x0002	/* Value is a maximum */
 #define IW_RETRY_RELATIVE	0x0004	/* Value is not in seconds/ms/us */
-#define IW_RETRY_SHORT		0x0010	/* Value is for short packets  */
-#define IW_RETRY_LONG		0x0020	/* Value is for long packets */
 
 /* Scanning request flags */
 #define IW_SCAN_DEFAULT		0x0000	/* Default scan of the driver */
@@ -535,17 +534,7 @@
 #define IW_SCAN_TYPE_ACTIVE 0
 #define IW_SCAN_TYPE_PASSIVE 1
 /* Maximum size of returned data */
-#define IW_SCAN_MAX_DATA	8192	/* In bytes */
-
-/* Scan capability flags - in (struct iw_range *)->scan_capa */
-#define IW_SCAN_CAPA_NONE		0x00
-#define IW_SCAN_CAPA_ESSID		0x01
-#define IW_SCAN_CAPA_BSSID		0x02
-#define IW_SCAN_CAPA_CHANNEL	0x04
-#define IW_SCAN_CAPA_MODE		0x08
-#define IW_SCAN_CAPA_RATE		0x10
-#define IW_SCAN_CAPA_TYPE		0x20
-#define IW_SCAN_CAPA_TIME		0x40
+#define IW_SCAN_MAX_DATA  4096  /* In bytes */
 
 /* Max number of char in custom event - use multiple of them if needed */
 #define IW_CUSTOM_MAX		256	/* In bytes */
@@ -556,8 +545,6 @@
 /* MLME requests (SIOCSIWMLME / struct iw_mlme) */
 #define IW_MLME_DEAUTH		0
 #define IW_MLME_DISASSOC	1
-#define IW_MLME_AUTH		2
-#define IW_MLME_ASSOC		3
 
 /* SIOCSIWAUTH/SIOCGIWAUTH struct iw_param flags */
 #define IW_AUTH_INDEX		0x0FFF
@@ -611,7 +598,6 @@
 #define IW_ENCODE_ALG_WEP	1
 #define IW_ENCODE_ALG_TKIP	2
 #define IW_ENCODE_ALG_CCMP	3
-#define IW_ENCODE_ALG_PMK	4
 /* struct iw_encode_ext ->ext_flags */
 #define IW_ENCODE_EXT_TX_SEQ_VALID	0x00000001
 #define IW_ENCODE_EXT_RX_SEQ_VALID	0x00000002
@@ -631,7 +617,6 @@
 #define IW_ENC_CAPA_WPA2	0x00000002
 #define IW_ENC_CAPA_CIPHER_TKIP	0x00000004
 #define IW_ENC_CAPA_CIPHER_CCMP	0x00000008
-#define IW_ENC_CAPA_4WAY_HANDSHAKE	0x00000010
 
 /* Event capability macros - in (struct iw_range *)->event_capa
  * Because we have more than 32 possible events, we use an array of
@@ -676,19 +661,6 @@ struct	iw_point
   __u16		length;		/* number of fields or size in bytes */
   __u16		flags;		/* Optional params */
 };
-
-#ifdef __KERNEL__
-#ifdef CONFIG_COMPAT
-
-#include <linux/compat.h>
-
-struct compat_iw_point {
-	compat_caddr_t pointer;
-	__u16 length;
-	__u16 flags;
-};
-#endif
-#endif
 
 /*
  *	A frequency
@@ -984,9 +956,6 @@ struct	iw_range
 	__u16		old_num_channels;
 	__u8		old_num_frequency;
 
-	/* Scan capabilities */
-	__u8		scan_capa; 	/* IW_SCAN_CAPA_* bit field */
-
 	/* Wireless event capability bitmasks */
 	__u32		event_capa[6];
 
@@ -1112,31 +1081,5 @@ struct iw_event
 			  (char *) NULL)
 #define IW_EV_POINT_LEN	(IW_EV_LCP_LEN + sizeof(struct iw_point) - \
 			 IW_EV_POINT_OFF)
-
-#ifdef __KERNEL__
-#ifdef CONFIG_COMPAT
-struct __compat_iw_event {
-	__u16		len;			/* Real length of this stuff */
-	__u16		cmd;			/* Wireless IOCTL */
-	compat_caddr_t	pointer;
-};
-#define IW_EV_COMPAT_LCP_LEN offsetof(struct __compat_iw_event, pointer)
-#define IW_EV_COMPAT_POINT_OFF offsetof(struct compat_iw_point, length)
-#define IW_EV_COMPAT_POINT_LEN	\
-	(IW_EV_COMPAT_LCP_LEN + sizeof(struct compat_iw_point) - \
-	 IW_EV_COMPAT_POINT_OFF)
-#endif
-#endif
-
-/* Size of the Event prefix when packed in stream */
-#define IW_EV_LCP_PK_LEN	(4)
-/* Size of the various events when packed in stream */
-#define IW_EV_CHAR_PK_LEN	(IW_EV_LCP_PK_LEN + IFNAMSIZ)
-#define IW_EV_UINT_PK_LEN	(IW_EV_LCP_PK_LEN + sizeof(__u32))
-#define IW_EV_FREQ_PK_LEN	(IW_EV_LCP_PK_LEN + sizeof(struct iw_freq))
-#define IW_EV_PARAM_PK_LEN	(IW_EV_LCP_PK_LEN + sizeof(struct iw_param))
-#define IW_EV_ADDR_PK_LEN	(IW_EV_LCP_PK_LEN + sizeof(struct sockaddr))
-#define IW_EV_QUAL_PK_LEN	(IW_EV_LCP_PK_LEN + sizeof(struct iw_quality))
-#define IW_EV_POINT_PK_LEN	(IW_EV_LCP_LEN + 4)
 
 #endif	/* _LINUX_WIRELESS_H */
